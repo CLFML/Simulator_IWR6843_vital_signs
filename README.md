@@ -1,25 +1,26 @@
-radar_simulator/
-│
-├── config/
-│   ├── __init__.py
-│   ├── radar_config.py         # RadarConfig dataclass
-│   ├── human_target.py         # HumanTarget dataclass
-│   ├── config_parser.py        # .cfg file parser
-│   └── config_validator.py     # Configuration validation
-│
-├── core/
-│   ├── __init__.py
-│   ├── signal_model.py         # Signal generation 
-│   └── vital_signs_model.py    # Vital signs modeling
-│
-├── utils/
-│   ├── __init__.py
-│   └── logger.py              # Logging configuration
-│
-├── profiles/                   # Example .cfg files
-│   └── vital_signs_60ghz.cfg
-│
-├── logs/                      # Log output directory
-│
-├── main.py
-└── requirements.txt
+# Simulator for IWR6843 signals
+
+Radar configurations are taken from an actual profile, see e.g. profiles/vital_signs_60ghz.cfg for an example .cfg file.
+
+## Assumptions
+
+- Single target, angle is approximately known, so angle estimation/beamforming 
+- Stationary target, so Doppler processing is not needed
+- Target distance is approximately known, and approximately 1 meter. Therefore CFAR (Constant False Alarm Rate) detection is not needed
+- No clustering/tracking needed, so AoA (Angle of Arrival) processing can be skipped. However, for best phase measurements for vital signs, you may still want to use multiple RX antennas in an optimized way to improve SNR at the known subject position, rather than doing full spatial scanning with AoA processing.
+
+## No beamforming
+
+- The xWR68xx devices use a fixed antenna array pattern and don't have active/electronic beam steering capability
+- Based on the SDK documentation and device capabilities, digital beamforming with the IWR6843/xWR68xx could be implemented using the MIMO virtual array. One would enable multiple TX and RX antennas through channelCfg and configure TDM-MIMO through chirpCfg where each chirp uses a different TX antenna. For each range bin, you would have 12 virtual antennas (3 TX × 4 RX), then complex samples from these virtual antennas can be combined using steering vectors. For now this option is not investigated.
+
+
+### Digital signal processing components
+
+- Range processing:
+    Use the Range DPU (Range Processing Unit) to perform 1D FFT on the ADC samples, to convert time domain samples to frequency domain (range bins). Since we know the approximate range, we only need to process the relevant range bin(s) around 1 meter.
+- Vital signs processing:
+    - Extract phase information from the complex samples in the range bin of interest
+    - Perform phase unwrapping
+    - Apply bandpass filters to separate: Breathing signal (0.1-0.5 Hz typical) and Heartbeat signal (0.8-2.0 Hz typical)    
+
