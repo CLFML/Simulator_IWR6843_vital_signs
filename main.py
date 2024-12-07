@@ -46,19 +46,12 @@ class RadarSimulator:
             i_signal, q_signal = self.signal_model.generate_received_signal()
            
             results = self.processor.process_frame(i_signal, q_signal)
-            # print(results)
 
             if results:
-
                 breathing_rate[frame] = results['breathing_rate']
                 heartbeat_rate[frame] = results['heartbeat_rate']
                 displacement[frame] = results['displacement_mm']
 
-        #    if results and frame % 10 == 0:  # Log every 10th frame
-        #         self.logger.info(f"Frame {frame} Results:")
-        #         self.logger.info(f"\tBreathing Rate estimate: {results['breathing_rate']:.1f} breaths/min")
-        #         self.logger.info(f"\tHeartbeat Rate estimate: {results['heartbeat_rate']:.1f} beats/min")
-        #         self.logger.info(f"\tDisplacement estimate: {results['displacement_mm']:.2f} mm")
         return breathing_rate, heartbeat_rate, displacement
   
 if __name__ == "__main__":
