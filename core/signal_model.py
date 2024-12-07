@@ -71,66 +71,58 @@ class SignalModel:
             motion = np.zeros_like(t)
             
         return breathing + heartbeat + motion
-
-    def generate_received_signal(self) -> Tuple[np.ndarray, np.ndarray]:
-        """Generate received I/Q signal for a single chirp"""
-        # Generate time vector if not already done
-        if len(self.t) == 0:
-            self.generate_chirp_time()
-                
+    
+    def generate_adc_samples(self) -> np.ndarray:
+        """Generate raw ADC samples for a single chirp"""
+        # Generate chirp time samples
+        t = self.generate_chirp_time()
+        
         # Calculate target displacement
-        displacement = self.calculate_target_displacement(self.t)
+        displacement = self.calculate_target_displacement(t)
         total_distance = self.target.distance + displacement
         logger.debug(f"Target distance range: [{min(total_distance)}, {max(total_distance)}] meters")
         
         # Calculate FMCW parameters
         c = 3e8
-        start_freq_hz = self.radar_config.rf.start_freq  
-        wavelength = c/start_freq_hz        
+        wavelength = c/self.radar_config.rf.start_freq
         logger.debug(f"Wavelength: {wavelength:.6f} m")
-        logger.debug(f"Start frequency: {start_freq_hz/1e9:.2f} GHz")
-
+        logger.debug(f"Start frequency: {self.radar_config.rf.start_freq/1e9:.2f} GHz")
         logger.debug(f"Frequency slope: {self.radar_config.rf.slope/1e12:.2f} MHz/μs")
 
-        # Calculate instantaneous frequency
-        freq_offset = self.radar_config.rf.slope * self.t
+        # Calculate frequency components
+        freq_offset = self.radar_config.rf.slope * t
         logger.debug(f"Max frequency offset: {max(freq_offset)/1e9:.2f} GHz")
-
-        # Calculate total phase including both distance and chirp terms
-        phase_distance = 4*np.pi*total_distance/wavelength
-        phase_chirp = 2*np.pi*freq_offset*self.t
-        phase = phase_distance + phase_chirp
         
+        # Calculate phase components
+        phase_distance = 4*np.pi*total_distance/wavelength
+        phase_chirp = 2*np.pi*freq_offset*t
+        phase = phase_distance + phase_chirp
         logger.debug(f"Phase range: [{min(phase)}, {max(phase)}] radians")
         
         # Add phase noise
-        phase_noise = self.generate_phase_noise(len(self.t))
+        phase_noise = self.generate_phase_noise(len(t))
         logger.debug(f"Phase noise range: [{min(phase_noise)}, {max(phase_noise)}] radians")
         phase += phase_noise
         
-        # Generate I/Q signal 
+        # Generate complex baseband signal
         signal = np.exp(1j * phase)
         logger.debug(f"Initial signal range: [{np.min(np.abs(signal))}, {np.max(np.abs(signal))}]")
         
         # Add thermal noise
-        thermal_noise = self.generate_thermal_noise(len(self.t))
+        thermal_noise = self.generate_thermal_noise(len(t))
         logger.debug(f"Thermal noise range: [{np.min(np.abs(thermal_noise))}, {np.max(np.abs(thermal_noise))}]")
         signal += thermal_noise
-
-        # Apply gains
-        tx_power_linear = 10**(self.radar_config.rf.tx_power/10)  # dBm to linear
-        rx_gain_linear = 10**(self.radar_config.rf.rx_gain/20)  # Convert dB to linear scale
-        signal *= tx_power_linear * rx_gain_linear
-
-        # # Then apply ADC scaling if needed
-        # if self.radar_config.adc.bits:
-        #     max_counts = 2**(self.radar_config.adc.bits-1) - 1
-        #     signal = np.clip(signal * max_counts, -max_counts, max_counts)
         
-        # Apply radar equation attenuation
+        # Apply TX/RX gains
+        tx_power_linear = 10**(self.radar_config.rf.tx_power/10)
+        rx_gain_linear = 10**(self.radar_config.rf.rx_gain/20)
+        signal *= tx_power_linear * rx_gain_linear
+        
+        # Apply radar equation path loss
         path_loss = (wavelength/(4*np.pi*self.target.distance))**4 * \
-                self.target.rcs * \
-                self.radar_config.antenna.antenna_gain**2
+                    self.target.rcs * \
+                    self.radar_config.antenna.antenna_gain**2
+                    
         logger.debug(f"Path loss components:")
         logger.debug(f"- Spreading loss: {(wavelength/(4*np.pi*self.target.distance))**4}")
         logger.debug(f"- Final path loss factor: {path_loss}")
@@ -140,9 +132,80 @@ class SignalModel:
 
         logger.debug(f"Beat frequency expected: {2 * self.radar_config.rf.slope * self.target.distance / 3e8:.2f} Hz")
         logger.debug(f"Phase accumulation rate: {4*np.pi*self.target.distance*self.radar_config.rf.slope/3e8:.2f} Hz")
-        # logger.debug(f"Phase accumulation rate: {np.mean(np.diff(phase))/(self.t[1]-self.t[0])/(2*np.pi):.2f} Hz")        
+        
+        return signal
+    
+    # def generate_received_signal(self) -> Tuple[np.ndarray, np.ndarray]:
+    #     """Generate received I/Q signal for a single chirp"""
+    #     # Generate time vector if not already done
+    #     if len(self.t) == 0:
+    #         self.generate_chirp_time()
+                
+    #     # Calculate target displacement
+    #     displacement = self.calculate_target_displacement(self.t)
+    #     total_distance = self.target.distance + displacement
+    #     logger.debug(f"Target distance range: [{min(total_distance)}, {max(total_distance)}] meters")
+        
+    #     # Calculate FMCW parameters
+    #     c = 3e8
+    #     start_freq_hz = self.radar_config.rf.start_freq  
+    #     wavelength = c/start_freq_hz        
+    #     logger.debug(f"Wavelength: {wavelength:.6f} m")
+    #     logger.debug(f"Start frequency: {start_freq_hz/1e9:.2f} GHz")
 
-        return np.real(signal), np.imag(signal)
+    #     logger.debug(f"Frequency slope: {self.radar_config.rf.slope/1e12:.2f} MHz/μs")
+
+    #     # Calculate instantaneous frequency
+    #     freq_offset = self.radar_config.rf.slope * self.t
+    #     logger.debug(f"Max frequency offset: {max(freq_offset)/1e9:.2f} GHz")
+
+    #     # Calculate total phase including both distance and chirp terms
+    #     phase_distance = 4*np.pi*total_distance/wavelength
+    #     phase_chirp = 2*np.pi*freq_offset*self.t
+    #     phase = phase_distance + phase_chirp
+        
+    #     logger.debug(f"Phase range: [{min(phase)}, {max(phase)}] radians")
+        
+    #     # Add phase noise
+    #     phase_noise = self.generate_phase_noise(len(self.t))
+    #     logger.debug(f"Phase noise range: [{min(phase_noise)}, {max(phase_noise)}] radians")
+    #     phase += phase_noise
+        
+    #     # Generate I/Q signal 
+    #     signal = np.exp(1j * phase)
+    #     logger.debug(f"Initial signal range: [{np.min(np.abs(signal))}, {np.max(np.abs(signal))}]")
+        
+    #     # Add thermal noise
+    #     thermal_noise = self.generate_thermal_noise(len(self.t))
+    #     logger.debug(f"Thermal noise range: [{np.min(np.abs(thermal_noise))}, {np.max(np.abs(thermal_noise))}]")
+    #     signal += thermal_noise
+
+    #     # Apply gains
+    #     tx_power_linear = 10**(self.radar_config.rf.tx_power/10)  # dBm to linear
+    #     rx_gain_linear = 10**(self.radar_config.rf.rx_gain/20)  # Convert dB to linear scale
+    #     signal *= tx_power_linear * rx_gain_linear
+
+    #     # # Then apply ADC scaling if needed
+    #     # if self.radar_config.adc.bits:
+    #     #     max_counts = 2**(self.radar_config.adc.bits-1) - 1
+    #     #     signal = np.clip(signal * max_counts, -max_counts, max_counts)
+        
+    #     # Apply radar equation attenuation
+    #     path_loss = (wavelength/(4*np.pi*self.target.distance))**4 * \
+    #             self.target.rcs * \
+    #             self.radar_config.antenna.antenna_gain**2
+    #     logger.debug(f"Path loss components:")
+    #     logger.debug(f"- Spreading loss: {(wavelength/(4*np.pi*self.target.distance))**4}")
+    #     logger.debug(f"- Final path loss factor: {path_loss}")
+        
+    #     signal *= np.sqrt(path_loss)
+    #     logger.debug(f"Final signal range: [{np.min(np.abs(signal))}, {np.max(np.abs(signal))}]")
+
+    #     logger.debug(f"Beat frequency expected: {2 * self.radar_config.rf.slope * self.target.distance / 3e8:.2f} Hz")
+    #     logger.debug(f"Phase accumulation rate: {4*np.pi*self.target.distance*self.radar_config.rf.slope/3e8:.2f} Hz")
+    #     # logger.debug(f"Phase accumulation rate: {np.mean(np.diff(phase))/(self.t[1]-self.t[0])/(2*np.pi):.2f} Hz")        
+
+    #     return np.real(signal), np.imag(signal)
 
     def get_range_profile(self, i_signal: np.ndarray, q_signal: np.ndarray) -> np.ndarray:
         """Calculate range profile from I/Q signals"""

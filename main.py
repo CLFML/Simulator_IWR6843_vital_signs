@@ -43,9 +43,12 @@ class RadarSimulator:
         displacement = np.zeros(num_frames)
          
         for frame in range(num_frames):
-            i_signal, q_signal = self.signal_model.generate_received_signal()
-           
-            results = self.processor.process_frame(i_signal, q_signal)
+
+            # Generate ADC samples instead of I/Q
+            adc_samples = self.signal_model.generate_adc_samples()
+            results = self.processor.process_frame(adc_samples)            
+            # i_signal, q_signal = self.signal_model.generate_received_signal()
+            # results = self.processor.process_frame(i_signal, q_signal)
 
             if results:
                 breathing_rate[frame] = results['breathing_rate']
